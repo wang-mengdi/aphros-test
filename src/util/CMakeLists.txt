@@ -50,7 +50,6 @@ add_object(${T} timer.cpp)
 
 set(T "gitgen")
 add_object(${T} gitgen.cpp)
-add_dependencies(${T} gitrev)
 
 set(T "filesystem")
 add_object(${T} filesystem.cpp)

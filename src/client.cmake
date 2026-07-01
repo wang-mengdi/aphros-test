@@ -87,5 +87,10 @@ if (APHROS_USE_MPI AND APHROS_FIND_HDF)
   endif()
 endif()
 
-# warnings
-add_compile_options(-Wall -pedantic -Wextra)
+# MSVC compatibility: define _USE_MATH_DEFINES for M_PI, NOMINMAX to avoid min/max macros
+if(MSVC)
+  add_compile_definitions(_USE_MATH_DEFINES NOMINMAX)
+endif()
+
+# warnings (disabled for MSVC compatibility)
+# add_compile_options(-Wall -pedantic -Wextra)

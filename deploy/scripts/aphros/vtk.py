@@ -87,11 +87,11 @@ def ReadVtkPoly(f, verbose=False):
                     dt = np.dtype('>f4')
                     bytes = f.read(3 * num_points * dt.itemsize)
                     points = np.frombuffer(bytes, dtype=dt)
-                    points = points.astype(np.float)
+                    points = points.astype(np.float64)
                     f.readline()
                 else:
                     points = np.fromfile(f,
-                                         dtype=np.float,
+                                         dtype=np.float64,
                                          count=num_points * 3,
                                          sep=' ')
                 points = points.reshape((num_points, 3))
@@ -108,7 +108,7 @@ def ReadVtkPoly(f, verbose=False):
                     dt = np.dtype('>i')
                     bytes = f.read(num_ints * dt.itemsize)
                     ints = np.frombuffer(bytes, dtype=dt)
-                    ints = ints.astype(np.int)
+                    ints = ints.astype(np.int64)
                     f.readline()
                 else:
                     ints = np.fromfile(f,
@@ -145,10 +145,10 @@ def ReadVtkPoly(f, verbose=False):
                     dt = np.dtype('>f4')
                     bytes = f.read(num_poly * dt.itemsize)
                     u = np.frombuffer(bytes, dtype=dt)
-                    u = u.astype(np.float)
+                    u = u.astype(np.float64)
                     f.readline()
                 else:
-                    u = np.fromfile(f, dtype=np.float, count=num_poly, sep=' ')
+                    u = np.fromfile(f, dtype=np.float64, count=num_poly, sep=' ')
 
                 Assert(u.shape[0] == num_poly, ["u.shape=", u.shape])
                 if verbose:
