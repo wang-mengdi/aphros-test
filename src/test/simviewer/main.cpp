@@ -39,6 +39,7 @@ void RunSim(M& m, Vars& var) {
     Scal tmax, frame_dt, vortex_period, next_dump;
     Vect uniform_vel;
     uint32_t frame_count;
+    int hl;
   } * ctx(sem);
   auto& s = *ctx;
 
@@ -79,7 +80,8 @@ void RunSim(M& m, Vars& var) {
                           &s.fe_flux, &s.fc_src, 0., dt, p));
 
     s.outdir = "simviewer_" + s.test_name;
-    simviewer::InitOutput(s.outdir);
+    s.hl = var.Int["hl"];
+    simviewer::InitOutput(s.outdir, m, s.hl);
     s.next_dump = 0;
     s.frame_count = 0;
     if (m.IsRoot()) std::cout << "Test: " << s.test_name
@@ -108,11 +110,15 @@ void RunSim(M& m, Vars& var) {
     Scal t = s.as->GetTime();
     if (t >= s.next_dump - 1e-12) {
       bool init = (s.frame_count == 0);
-      simviewer::ExportVof(s.outdir, s.frame_count, s.as->GetField(), m, init);
+      simviewer::ExportVof(s.outdir, s.frame_count, s.as->GetField(), m, init, s.hl);
       auto plic = s.as->GetPlic();
       simviewer::ExportInterface(s.outdir, s.frame_count,
-                                 *plic.vfci[0], *plic.vfcn[0], *plic.vfca[0], m);
-      if (init) simviewer::ExportGrid(s.outdir, m);
+                                 *plic.vfci[0], *plic.vfcn[0], *plic.vfca[0], m, s.hl);
+      simviewer::ExportNormal(s.outdir, s.frame_count,
+                              *plic.vfci[0], *plic.vfcn[0], m, s.hl);
+      simviewer::ExportVelocity(s.outdir, s.frame_count, m,
+                                s.fe_flux, s.as->GetTimeStep(), s.hl);
+      if (init) simviewer::ExportGrid(s.outdir, m, s.hl);
       s.frame_count++;
       simviewer::UpdateFrameCount(s.outdir, s.frame_count);
       if (m.IsRoot()) std::cout << "Frame " << (s.frame_count-1)

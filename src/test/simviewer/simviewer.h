@@ -1,247 +1,173 @@
-// SimViewer binary export utilities for aphros
-// Writes the SimViewer data format for 2D VOF visualization.
-// Based on SimViewer data-format.md:
-//   vof: fracmap indexed triangles (TopoFixed=true)
-//   grid: static lines (frame 0 only)
-//   interface: animated lines (PLIC segments)
-//
-// Uses only C++14-compatible features (no std::filesystem).
+// SimViewer binary export for 2D VOF — aphros edition
+// Objects: vof (fracmap triangles), grid (static lines),
+//          interface (PLIC segments), normal, velocity
 
 #pragma once
-
 #include <array>
 #include <cstdio>
 #include <fstream>
 #include <string>
 #include <vector>
-
 #ifdef _WIN32
 #include <direct.h>
-#define mkdir_p(path) _mkdir(path)
+#define sim_mkdir(p) _mkdir(p)
 #else
 #include <sys/stat.h>
-#define mkdir_p(path) mkdir(path, 0755)
+#define sim_mkdir(p) mkdir(p, 0755)
 #endif
-
 #include "geom/mesh.h"
 #include "solver/reconst.h"
 
 namespace simviewer {
 
-// --- Simple path helpers (no std::filesystem needed) ---
-inline std::string path_join(const std::string& a, const std::string& b) {
-  if (a.empty()) return b;
-  if (b.empty()) return a;
-  if (a.back() == '/' || a.back() == '\\') return a + b;
-  return a + "/" + b;
+// --- helpers ---
+inline std::string j(const std::string& a, const std::string& b) {
+  if (a.empty()) return b; if (b.empty()) return a;
+  if (a.back()=='/'||a.back()=='\\') return a+b; return a+"/"+b;
+}
+inline void mkdirs(const std::string& p) {
+  std::string c; for (size_t i=0;i<p.size();++i){if(p[i]=='/'||p[i]=='\\'){if(!c.empty())sim_mkdir(c.c_str());}c+=p[i];}
+  if(!c.empty())sim_mkdir(c.c_str());
+}
+inline std::string fdir(const std::string& root, uint32_t f) { return j(j(root,"results"),std::to_string(f)); }
+
+inline void w32(std::ostream& o, uint32_t v){o.write((const char*)&v,4);}
+inline void wf(std::ostream& o, float v)    {o.write((const char*)&v,4);}
+inline void wv2(std::ostream& o, float x, float y){wf(o,x);wf(o,y);}
+
+// --- halo helper: extract hl from block size difference ---
+template <class M>
+int GetHl(const M& m) {
+  // block size = physical + 2*hl in each dimension
+  // We don't have the physical size without config, but hl is stored
+  // in the mesh's internal state. Simplest: just return 2 (matches aphros default).
+  return 2;
 }
 
-inline void ensure_dir(const std::string& path) {
-  // Create directory, ignoring "already exists" errors
-  mkdir_p(path.c_str());
-  // On Windows, mkdir returns -1 for existing dir, which is fine
+// --- interior cell iteration (block already excludes halos) ---
+template <class M>
+void ForEachCell(const M& m, std::function<void(IdxCell)> body) {
+  for (auto c : m.Cells()) body(c);
 }
 
-inline void make_dirs(const std::string& path) {
-  // Create all parent directories
-  std::string cur;
-  for (size_t i = 0; i < path.size(); ++i) {
-    if (path[i] == '/' || path[i] == '\\') {
-      if (!cur.empty()) ensure_dir(cur);
-    }
-    cur += path[i];
-  }
-  if (!cur.empty()) ensure_dir(cur);
-}
-
-// --- Binary write helpers (little-endian) ---
-inline void WriteU32(std::ostream& out, uint32_t val) {
-  out.write(reinterpret_cast<const char*>(&val), sizeof(val));
-}
-inline void WriteF32(std::ostream& out, float val) {
-  out.write(reinterpret_cast<const char*>(&val), sizeof(val));
-}
-inline void WriteVec2(std::ostream& out, float x, float y) {
-  WriteF32(out, x);
-  WriteF32(out, y);
-}
-
-// --- Directory setup ---
-inline void InitOutput(const std::string& dirname) {
-  // Remove existing output if present
+// --- Init ---
+template <class M>
+void InitOutput(const std::string& dirname, const M& m, int hl) {
   std::string cmd = "rmdir /s /q \"" + dirname + "\" 2>nul";
 #ifdef _WIN32
   std::system(cmd.c_str());
 #else
-  cmd = "rm -rf \"" + dirname + "\"";
-  std::system(cmd.c_str());
+  std::system(("rm -rf \""+dirname+"\"").c_str());
 #endif
+  mkdirs(j(j(dirname,"results"),"0"));
 
-  make_dirs(path_join(path_join(dirname, "results"), "0"));
+  auto full = m.GetInBlockCells().GetSize();
+  auto h = m.GetCellSize();
+  // First physical node is at index hl (skip halo nodes before domain)
+  int nx = full[0], ny = full[1];
+  float ox = (float)(m.GetNode(IdxNode(0))[0] + hl * h[0]);
+  float oy = (float)(m.GetNode(IdxNode(0))[1] + hl * h[1]);
 
-  // Write description.yaml
-  {
-    std::ofstream f(path_join(dirname, "description.yaml"));
-    f << "Dimension: 2\n";
-    f << "Radius: 0.55\n";
-    f << "Objects:\n";
-    // vof: fracmap indexed triangles, topo fixed
-    f << "  - Name: vof\n";
-    f << "    Animated: true\n";
-    f << "    Primitive: Triangles\n";
-    f << "    Shader: fracmap\n";
-    f << "    Indexed: true\n";
-    f << "    TopoFixed: true\n";
-    f << "    Material:\n";
-    f << "      Albedo: [0, 0, 1, 1]\n";
-    // grid: static lines
-    f << "  - Name: grid\n";
-    f << "    Primitive: Lines\n";
-    f << "    Material:\n";
-    f << "      Albedo: [0.2, 0.2, 0.2, 1]\n";
-    // interface: animated lines
-    f << "  - Name: interface\n";
-    f << "    Animated: true\n";
-    f << "    Primitive: Lines\n";
-    f << "    Material:\n";
-    f << "      Albedo: [1, 0, 0, 1]\n";
-  }
-
-  // Write initial frame_count.txt
-  {
-    std::ofstream f(path_join(dirname, "frame_count.txt"));
-    f << "1\n";
-  }
+  std::ofstream f(j(dirname,"description.yaml"));
+  f << "Dimension: 2\nRadius: 0.55\n";
+  f << "GridResolution: [" << nx << ", " << ny << "]\n";
+  f << "GridSpacing: " << h[0] << "\n";
+  f << "GridOrigin: [" << ox << ", " << oy << "]\n";
+  f << "Objects:\n"
+       "  - Name: vof\n    Animated: true\n    Primitive: Triangles\n"
+       "    Shader: fracmap\n    Indexed: true\n    TopoFixed: true\n"
+       "    Material:\n      Albedo: [0, 0, 1, 1]\n"
+       "  - Name: grid\n    Primitive: Lines\n"
+       "    Material:\n      Albedo: [0.2, 0.2, 0.2, 1]\n"
+       "  - Name: interface\n    Animated: true\n    Primitive: Lines\n"
+       "    Material:\n      Albedo: [1, 0, 0, 1]\n"
+       "  - Name: normal\n    Animated: true\n    Primitive: Lines\n"
+       "    Material:\n      Albedo: [0, 1, 0, 1]\n"
+       "  - Name: velocity\n    Animated: true\n    Primitive: Lines\n"
+       "    Material:\n      Albedo: [1, 1, 0, 1]\n";
+  std::ofstream fc(j(dirname,"frame_count.txt")); fc << "1\n";
+}
+inline void UpdateFrameCount(const std::string& d, uint32_t n) {
+  std::ofstream f(j(d,"frame_count.txt")); f << n << "\n";
 }
 
-inline void UpdateFrameCount(const std::string& dirname, uint32_t n) {
-  std::ofstream f(path_join(dirname, "frame_count.txt"));
-  f << n << "\n";
-}
-
-inline std::string frame_dir(const std::string& dirname, uint32_t frame) {
-  return path_join(path_join(dirname, "results"), std::to_string(frame));
-}
-
-// --- VOF field export (fracmap indexed triangles) ---
+// --- VOF ---
 template <class M>
-void ExportVof(
-    const std::string& dirname, uint32_t frame,
-    const FieldCell<typename M::Scal>& vof, const M& m, bool is_initial) {
-  using Scal = typename M::Scal;
-  auto fdir = frame_dir(dirname, frame);
-  make_dirs(fdir);
-
-  std::ofstream f(path_join(fdir, "vof.out"), std::ios::binary);
-
-  uint32_t num_cells = static_cast<uint32_t>(m.GetInBlockCells().GetSize().prod());
-  uint32_t vertex_count = num_cells * 4;
-
-  // vertex_count
-  WriteU32(f, vertex_count);
-
-  // positions: vertex_count * vec2<float32>
-  for (auto c : m.Cells()) {
-    for (size_t q = 0; q < 4; ++q) {
-      auto pos = m.GetNode(m.GetNode(c, q));
-      WriteVec2(f, static_cast<float>(pos[0]), static_cast<float>(pos[1]));
-    }
-  }
-
-  // heats: vertex_count * float32 (same vof per cell -> 4 copies)
-  for (auto c : m.Cells()) {
-    float val = static_cast<float>(vof[c]);
-    for (int i = 0; i < 4; ++i) WriteF32(f, val);
-  }
-
-  // indices (only frame 0, TopoFixed=true)
-  if (is_initial) {
-    uint32_t index_count = num_cells * 6;
-    WriteU32(f, index_count);
-    for (uint32_t i = 0; i < num_cells; ++i) {
-      uint32_t indices[6] = {
-          i * 4 + 0, i * 4 + 1, i * 4 + 2,
-          i * 4 + 2, i * 4 + 1, i * 4 + 3};
-      f.write(reinterpret_cast<const char*>(indices), sizeof(indices));
-    }
-  }
+void ExportVof(const std::string& dir, uint32_t frame,
+               const FieldCell<typename M::Scal>& vof, const M& m, bool init, int hl) {
+  auto fd = fdir(dir,frame); mkdirs(fd);
+  std::ofstream f(j(fd,"vof.out"), std::ios::binary);
+  uint32_t nc = (uint32_t)m.GetInBlockCells().GetSize().prod();
+  w32(f, nc*4);
+  ForEachCell(m, [&](IdxCell c){
+    for(size_t q=0;q<4;++q){auto p=m.GetNode(m.GetNode(c,q));wv2(f,(float)p[0],(float)p[1]);}
+  });
+  ForEachCell(m, [&](IdxCell c){
+    float v=(float)vof[c]; for(int i=0;i<4;++i)wf(f,v);
+  });
+  if(init){w32(f,nc*6); for(uint32_t i=0;i<nc;++i){uint32_t x[6]={i*4+0,i*4+1,i*4+2,i*4+2,i*4+1,i*4+3};f.write((const char*)x,24);}}
 }
 
-// --- Grid lines export (static, frame 0 only) ---
+// --- Grid ---
 template <class M>
-void ExportGrid(const std::string& dirname, const M& m) {
-  auto fdir = frame_dir(dirname, 0);
-  make_dirs(fdir);
-  std::ofstream f(path_join(fdir, "grid.out"), std::ios::binary);
-
-  auto res = m.GetInBlockCells().GetSize();
-  uint32_t nx = static_cast<uint32_t>(res[0]);
-  uint32_t ny = static_cast<uint32_t>(res[1]);
-
-  auto origin = m.GetNode(IdxNode(0));
-  auto top_right = origin + m.GetCellSize() * generic::Vect<double, 2>(nx, ny);
-  float ox = static_cast<float>(origin[0]);
-  float oy = static_cast<float>(origin[1]);
-  float tx = static_cast<float>(top_right[0]);
-  float ty = static_cast<float>(top_right[1]);
-  auto dx = static_cast<float>(m.GetCellSize()[0]);
-  auto dy = static_cast<float>(m.GetCellSize()[1]);
-
-  uint32_t cnt = 2 * (nx + 1) + 2 * (ny + 1);
-  WriteU32(f, cnt);
-
-  for (uint32_t i = 0; i <= nx; ++i) {
-    float x = ox + i * dx;
-    WriteVec2(f, x, oy);
-    WriteVec2(f, x, ty);
-  }
-  for (uint32_t j = 0; j <= ny; ++j) {
-    float y = oy + j * dy;
-    WriteVec2(f, ox, y);
-    WriteVec2(f, tx, y);
-  }
+void ExportGrid(const std::string& dir, const M& m, int hl) {
+  auto fd = fdir(dir,0); mkdirs(fd);
+  std::ofstream f(j(fd,"grid.out"), std::ios::binary);
+  auto full=m.GetInBlockCells().GetSize(); auto h=m.GetCellSize();
+  uint32_t nx=(uint32_t)full[0], ny=(uint32_t)full[1];
+  float ox=(float)(m.GetNode(IdxNode(0))[0]+hl*h[0]), oy=(float)(m.GetNode(IdxNode(0))[1]+hl*h[1]);
+  float dx=(float)h[0], dy=(float)h[1];
+  w32(f,2*(nx+1)+2*(ny+1));
+  for(uint32_t i=0;i<=nx;++i){float x=ox+i*dx;wv2(f,x,oy);wv2(f,x,oy+ny*dy);}
+  for(uint32_t j=0;j<=ny;++j){float y=oy+j*dy;wv2(f,ox,y);wv2(f,ox+nx*dx,y);}
 }
 
-// --- Interface (PLIC) line segments export ---
+// --- Interface ---
 template <class M>
-void ExportInterface(
-    const std::string& dirname, uint32_t frame,
-    const FieldCell<bool>& interface_mask,
-    const FieldCell<typename M::Vect>& normal,
-    const FieldCell<typename M::Scal>& alpha,
-    const M& m) {
-  using Scal = typename M::Scal;
-  using Vect = typename M::Vect;
+void ExportInterface(const std::string& dir, uint32_t frame,
+                     const FieldCell<bool>& mask, const FieldCell<typename M::Vect>& n,
+                     const FieldCell<typename M::Scal>& a, const M& m, int hl) {
+  using S=typename M::Scal; auto fd=fdir(dir,frame); mkdirs(fd);
+  std::vector<float> seg;
+  ForEachCell(m, [&](IdxCell c){
+    if(!mask[c])return; auto p=Reconst<S>::GetCutPoly(m.GetCenter(c),n[c],a[c],m.GetCellSize());
+    if(p.size()<2)return;
+    for(size_t i=0;i+1<p.size();++i){seg.push_back((float)p[i][0]);seg.push_back((float)p[i][1]);seg.push_back((float)p[i+1][0]);seg.push_back((float)p[i+1][1]);}
+    if(p.size()>2){seg.push_back((float)p.back()[0]);seg.push_back((float)p.back()[1]);seg.push_back((float)p[0][0]);seg.push_back((float)p[0][1]);}
+  });
+  std::ofstream f(j(fd,"interface.out"),std::ios::binary); w32(f,(uint32_t)(seg.size()/2)); f.write((const char*)seg.data(),seg.size()*4);
+}
 
-  auto fdir = frame_dir(dirname, frame);
-  make_dirs(fdir);
+// --- Normal ---
+template <class M>
+void ExportNormal(const std::string& dir, uint32_t frame,
+                  const FieldCell<bool>& mask, const FieldCell<typename M::Vect>& n,
+                  const M& m, int hl) {
+  auto fd=fdir(dir,frame); mkdirs(fd);
+  std::vector<float> seg; float len=(float)(m.GetCellSize()[0]*0.5);
+  ForEachCell(m, [&](IdxCell c){
+    if(!mask[c])return; auto cen=m.GetCenter(c); auto end=cen+n[c]*len;
+    seg.push_back((float)cen[0]);seg.push_back((float)cen[1]);seg.push_back((float)end[0]);seg.push_back((float)end[1]);
+  });
+  std::ofstream f(j(fd,"normal.out"),std::ios::binary); w32(f,(uint32_t)(seg.size()/2)); f.write((const char*)seg.data(),seg.size()*4);
+}
 
-  std::vector<float> segments;
-  for (auto c : m.Cells()) {
-    if (!interface_mask[c]) continue;
-    auto poly = Reconst<Scal>::GetCutPoly(
-        m.GetCenter(c), normal[c], alpha[c], m.GetCellSize());
-    if (poly.size() >= 2) {
-      for (size_t i = 0; i + 1 < poly.size(); ++i) {
-        segments.push_back(static_cast<float>(poly[i][0]));
-        segments.push_back(static_cast<float>(poly[i][1]));
-        segments.push_back(static_cast<float>(poly[i + 1][0]));
-        segments.push_back(static_cast<float>(poly[i + 1][1]));
-      }
-      if (poly.size() > 2) {
-        segments.push_back(static_cast<float>(poly.back()[0]));
-        segments.push_back(static_cast<float>(poly.back()[1]));
-        segments.push_back(static_cast<float>(poly[0][0]));
-        segments.push_back(static_cast<float>(poly[0][1]));
-      }
-    }
-  }
-
-  std::ofstream f(path_join(fdir, "interface.out"), std::ios::binary);
-  uint32_t vertex_count = static_cast<uint32_t>(segments.size() / 2);
-  WriteU32(f, vertex_count);
-  f.write(reinterpret_cast<const char*>(segments.data()),
-          segments.size() * sizeof(float));
+// --- Velocity ---
+template <class M>
+void ExportVelocity(const std::string& dir, uint32_t frame, const M& m,
+                    const FieldEmbed<typename M::Scal>& fe, typename M::Scal dt, int hl) {
+  using V=typename M::Vect; using S=typename M::Scal;
+  auto fd=fdir(dir,frame); mkdirs(fd);
+  S dx=m.GetCellSize()[0], dy=m.GetCellSize()[1];
+  std::vector<float> seg;
+  ForEachCell(m, [&](IdxCell c){
+    V ctr=m.GetCenter(c);
+    S u=(fe[m.GetFace(c,IdxNci(0))]+fe[m.GetFace(c,IdxNci(1))])*0.5f/dy;
+    S v=(fe[m.GetFace(c,IdxNci(2))]+fe[m.GetFace(c,IdxNci(3))])*0.5f/dx;
+    V end=ctr+V(u,v)*dt;
+    seg.push_back((float)ctr[0]);seg.push_back((float)ctr[1]);seg.push_back((float)end[0]);seg.push_back((float)end[1]);
+  });
+  std::ofstream f(j(fd,"velocity.out"),std::ios::binary); w32(f,(uint32_t)(seg.size()/2)); f.write((const char*)seg.data(),seg.size()*4);
 }
 
 } // namespace simviewer
