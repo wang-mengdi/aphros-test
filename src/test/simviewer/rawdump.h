@@ -1,0 +1,36 @@
+// Minimal VOF-only wrapper that dumps raw float output matching SimLiquid's .raw format.
+// Compile as part of the simviewer test to get raw VOF data for comparison.
+//
+// Usage: t.simviewer.exe rawof translation 64
+// Output: simviewer_translation/vof_frame_XX.raw (resolution*resolution floats)
+
+#pragma once
+#include <fstream>
+#include <string>
+#include "geom/mesh.h"
+
+namespace simviewer {
+
+template <class M, class Scal>
+void ExportVofRaw(const std::string& dirname, uint32_t frame,
+                  const FieldCell<Scal>& vof, const M& m, int hl = 2) {
+  auto h = m.GetCellSize();
+  int nx = static_cast<int>(m.GetInBlockCells().GetSize()[0]);
+  int ny = static_cast<int>(m.GetInBlockCells().GetSize()[1]);
+
+  std::vector<float> buf(nx * ny, 0.0f);
+  for (auto c : m.Cells()) {
+    auto idx = m.GetIndexCells().GetMIdx(c);
+    int i = static_cast<int>(idx[0]);
+    int j = static_cast<int>(idx[1]);
+    if (i >= 0 && i < nx && j >= 0 && j < ny) {
+      buf[j * nx + i] = static_cast<float>(vof[c]);
+    }
+  }
+
+  std::string fname = dirname + "/vof_frame_" + std::to_string(frame) + ".raw";
+  std::ofstream f(fname, std::ios::binary);
+  f.write(reinterpret_cast<const char*>(buf.data()), buf.size() * sizeof(float));
+}
+
+} // namespace simviewer

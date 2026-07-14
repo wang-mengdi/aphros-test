@@ -15,6 +15,7 @@
 #include <solver/vof.h>
 
 #include "simviewer.h"
+#include "rawdump.h"
 
 using M = MeshCartesian<double, 2>;
 using Scal = typename M::Scal;
@@ -119,6 +120,8 @@ void RunSim(M& m, Vars& var) {
       simviewer::ExportVelocity(s.outdir, s.frame_count, m,
                                 s.fe_flux, s.as->GetTimeStep(), s.hl);
       if (init) simviewer::ExportGrid(s.outdir, m, s.hl);
+      // Raw VOF dump for comparison with SimLiquid
+      simviewer::ExportVofRaw(s.outdir, s.frame_count, s.as->GetField(), m, s.hl);
       s.frame_count++;
       simviewer::UpdateFrameCount(s.outdir, s.frame_count);
       if (m.IsRoot()) std::cout << "Frame " << (s.frame_count-1)
@@ -142,7 +145,7 @@ int main(int argc, const char** argv) {
     else { int r = std::atoi(argv[i]); if (r > 0) res = r; }
   }
   Scal tmax = (test == "vortex") ? 8.0 : 0.5;
-  Scal frame_dt = (test == "vortex") ? 0.2 : 0.025;
+  Scal frame_dt = (test == "vortex") ? 0.04 : 0.025;  // vortex: 25fps → 200 frames
   Scal cx = (test == "vortex") ? 0.5 : 0.25;
   Scal cy = (test == "vortex") ? 0.75 : 0.25;
 
