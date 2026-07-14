@@ -104,22 +104,25 @@ nmake t.advection
 Copy-Item ..\deploy\scripts\sim_base.conf build\base.conf
 ```
 
-**② `mesh.conf`** — 256×256 单进程网格：
+**② `mesh.conf`** — 256×64 单进程网格（域 2×0.5，匹配 Hysing 基准）：
 
 ```
 set int px 1
 set int py 1
 set int pz 1
 set int bx 4
-set int by 2
+set int by 1
 set int bz 1
 set int bsx 64
-set int bsy 128
+set int bsy 64
 set int bsz 1
 set double extent 2
 ```
 
-全局尺寸 = `px·bx·bsx × py·by·bsy` = 4×64 × 2×128 = 256×256。
+全局尺寸 = `px·bx·bsx × py·by·bsy` = 4×64 × 1×64 = 256×64。
+`extent=2` 设 x 方向域长为 2，y 方向按网格比例自动缩放：`64/256 × 2 = 0.5`，
+得到域 [0,2]×[0,0.5]，与 Hysing 基准和 `examples/208_rising/Makefile`（`m = 256 64 1`）一致。
+气泡在 y=0 对称面，仅模拟上半域。
 
 **③ `std.conf`** — 基于 `examples/208_rising/std.conf`，改用 `backend local`：
 
