@@ -145,7 +145,7 @@ int main(int argc, const char** argv) {
     else { int r = std::atoi(argv[i]); if (r > 0) res = r; }
   }
   Scal tmax = (test == "vortex") ? 8.0 : 0.5;
-  Scal frame_dt = (test == "vortex") ? 0.04 : 0.025;  // vortex: 25fps → 200 frames
+  Scal frame_dt = (test == "vortex") ? 0.04 : 0.025;
   Scal cx = (test == "vortex") ? 0.5 : 0.25;
   Scal cy = (test == "vortex") ? 0.75 : 0.25;
 
@@ -167,7 +167,7 @@ set string simviewer_test )EOF" + test + R"EOF(
 set double simviewer_tmax )EOF" + std::to_string(tmax) + R"EOF(
 set double simviewer_frame_dt )EOF" + std::to_string(frame_dt) + R"EOF(
 set double simviewer_vortex_period 8.0
-set double simviewer_vel_x 1.0
+set double simviewer_vel_x 0.5
 set double simviewer_vel_y 0.4
 set double circle_cx )EOF" + std::to_string(cx) + R"EOF(
 set double circle_cy )EOF" + std::to_string(cy) + R"EOF(
