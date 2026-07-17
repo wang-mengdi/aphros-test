@@ -145,7 +145,7 @@ int main(int argc, const char** argv) {
     else { int r = std::atoi(argv[i]); if (r > 0) res = r; }
   }
   Scal tmax = (test == "vortex") ? 8.0 : 0.5;
-  Scal frame_dt = (test == "vortex") ? 0.04 : 0.025;
+  Scal frame_dt = (test == "vortex") ? 0.04 : 0.04;  // 25 fps
   Scal cx = (test == "vortex") ? 0.5 : 0.25;
   Scal cy = (test == "vortex") ? 0.75 : 0.25;
 
