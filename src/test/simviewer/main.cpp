@@ -133,6 +133,9 @@ void RunSim(M& m, Vars& var) {
       if (init) simviewer::ExportGrid(s.outdir, m, s.hl);
       // Raw VOF dump for comparison with SimLiquid
       simviewer::ExportVofRaw(s.outdir, s.frame_count, s.as->GetField(), m, s.hl);
+      // Raw normal/alpha dump
+      simviewer::ExportNormalAlphaRaw(s.outdir, s.frame_count,
+          *plic.vfci[0], *plic.vfcn[0], *plic.vfca[0], m, s.hl);
       s.frame_count++;
       simviewer::UpdateFrameCount(s.outdir, s.frame_count);
       if (m.IsRoot()) std::cout << "Frame " << (s.frame_count-1)
