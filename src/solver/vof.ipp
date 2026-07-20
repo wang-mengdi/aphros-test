@@ -256,6 +256,23 @@ struct Vof<EB_>::Imp {
         ffvu[f] = v0 * uc[c];
       }
 
+      // DEBUG: dump flux and normal/alpha for interface cells
+      {
+        static int flux_dump_count = 0;
+        if (flux_dump_count < 20 && m.IsRoot() && uc[c] > 0 && uc[c] < 1) {
+          auto idx = m.GetIndexCells().GetMIdx(c);
+          if (idx[0] >= 0 && idx[0] < 32 && idx[1] >= 0 && idx[1] < 32) {
+            std::cerr << "FLUX cell(" << idx[0] << "," << idx[1] << ")"
+              << " n=(" << fcn[c][0] << "," << fcn[c][1] << ")"
+              << " a=" << fca[c]
+              << " vof=" << uc[c]
+              << " flux=" << ffvu[f]
+              << " v0=" << v0 << std::endl;
+            flux_dump_count++;
+          }
+        }
+      }
+
       // propagate color to downwind cell if empty
       if (fccl[c] != kClNone) {
         const IdxCell cd = m.GetCell(f, v > 0 ? 1 : 0); // downwind cell
