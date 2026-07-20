@@ -256,23 +256,6 @@ struct Vof<EB_>::Imp {
         ffvu[f] = v0 * uc[c];
       }
 
-      // DEBUG: dump flux and normal/alpha for interface cells
-      {
-        static int flux_dump_count = 0;
-        if (flux_dump_count < 20 && m.IsRoot() && uc[c] > 0 && uc[c] < 1) {
-          auto idx = m.GetIndexCells().GetMIdx(c);
-          if (idx[0] >= 0 && idx[0] < 32 && idx[1] >= 0 && idx[1] < 32) {
-            std::cerr << "FLUX cell(" << idx[0] << "," << idx[1] << ")"
-              << " n=(" << fcn[c][0] << "," << fcn[c][1] << ")"
-              << " a=" << fca[c]
-              << " vof=" << uc[c]
-              << " flux=" << ffvu[f]
-              << " v0=" << v0 << std::endl;
-            flux_dump_count++;
-          }
-        }
-      }
-
       // propagate color to downwind cell if empty
       if (fccl[c] != kClNone) {
         const IdxCell cd = m.GetCell(f, v > 0 ? 1 : 0); // downwind cell
@@ -340,27 +323,6 @@ struct Vof<EB_>::Imp {
       if (u == 0) {
         fccl[c] = kClNone;
         fcim[c] = TRM::Pack(MIdx(0));
-      }
-    }
-    // DEBUG: dump VOF after sweep update
-    {
-      static int sweep_dump_count = 0;
-      if (sweep_dump_count < 100 && m.IsRoot()) {
-        int nx = static_cast<int>(m.GetInBlockCells().GetSize()[0]);
-        int ny = static_cast<int>(m.GetInBlockCells().GetSize()[1]);
-        std::vector<float> buf(nx * ny, 0.0f);
-        for (auto c : m.Cells()) {
-          auto idx = m.GetIndexCells().GetMIdx(c);
-          int i = static_cast<int>(idx[0]);
-          int j = static_cast<int>(idx[1]);
-          if (i >= 0 && i < nx && j >= 0 && j < ny)
-            buf[j * nx + i] = static_cast<float>(uc[c]);
-        }
-        char fname[256];
-        std::snprintf(fname, sizeof(fname), "D:/simliquid_data/cmp_translation/aph_sweep_%d_axis%zu.raw", sweep_dump_count, dir);
-        std::ofstream f(fname, std::ios::binary);
-        f.write(reinterpret_cast<const char*>(buf.data()), buf.size() * sizeof(float));
-        sweep_dump_count++;
       }
     }
   }
