@@ -8,6 +8,7 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <vector>
 
 #include "approx.h"
 #include "approx_eb.h"
@@ -586,6 +587,24 @@ struct Vof<EB_>::Imp {
     fcu_.time_curr = fcu_.iter_curr;
     owner_->IncTime();
     modifier_ = nullptr;
+    // Dump raw VOF after each step
+    if (m.IsRoot()) {
+      int nx = static_cast<int>(m.GetInBlockCells().GetSize()[0]);
+      int ny = static_cast<int>(m.GetInBlockCells().GetSize()[1]);
+      std::vector<float> buf(nx * ny, 0.0f);
+      for (auto c : m.Cells()) {
+        auto idx = m.GetIndexCells().GetMIdx(c);
+        int i = static_cast<int>(idx[0]);
+        int j = static_cast<int>(idx[1]);
+        if (i >= 0 && i < nx && j >= 0 && j < ny) {
+          buf[j * nx + i] = static_cast<float>(fcu_.time_curr[c]);
+        }
+      }
+      char fname[256];
+      snprintf(fname, sizeof(fname), "raw_vof_%04d.raw", static_cast<int>(owner_->GetTime() / owner_->GetTimeStep() + 0.5));
+      std::ofstream f(fname, std::ios::binary);
+      f.write(reinterpret_cast<const char*>(buf.data()), buf.size() * sizeof(float));
+    }
   }
   void PostStep() {
     auto sem = m.GetSem("iter");
@@ -599,7 +618,6 @@ struct Vof<EB_>::Imp {
       // --> fca [a], fcn [a]
       BcApply(fca_, me_a_, m);
       BcApply(fcn_, me_n_, m);
-      // --> reflected fca [a], fcn [a]
 
       // unpack image vector
       for (auto c : m.AllCells()) {

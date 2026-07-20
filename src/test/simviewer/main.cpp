@@ -89,6 +89,16 @@ void RunSim(M& m, Vars& var) {
       << " tmax=" << s.tmax << " dt=" << dt << std::endl;
   }
 
+  // Dump IC before any steps (for comparison)
+  if (sem("dump_ic")) {
+    if (m.IsRoot()) {
+      std::cout << "IC dump at t=0" << std::endl;
+    }
+    bool init = true;
+    simviewer::ExportVof(s.outdir, 999, s.as->GetField(), m, init, s.hl);
+    simviewer::ExportVofRaw(s.outdir, 999, s.as->GetField(), m, s.hl);
+  }
+
   // Main loop (matching advection test pattern)
   sem.LoopBegin();
   if (sem("empty")) {}
@@ -109,7 +119,8 @@ void RunSim(M& m, Vars& var) {
   if (sem.Nested("finish")) { s.as->FinishStep(); }
   if (sem("dump")) {
     Scal t = s.as->GetTime();
-    if (t >= s.next_dump - 1e-12) {
+    // Dump every step for per-cell comparison with SimLiquid
+    {
       bool init = (s.frame_count == 0);
       simviewer::ExportVof(s.outdir, s.frame_count, s.as->GetField(), m, init, s.hl);
       auto plic = s.as->GetPlic();
@@ -126,7 +137,6 @@ void RunSim(M& m, Vars& var) {
       simviewer::UpdateFrameCount(s.outdir, s.frame_count);
       if (m.IsRoot()) std::cout << "Frame " << (s.frame_count-1)
         << " t=" << t << " dt=" << s.as->GetTimeStep() << std::endl;
-      s.next_dump += s.frame_dt;
     }
   }
   sem.LoopEnd();
