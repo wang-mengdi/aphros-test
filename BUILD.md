@@ -1,3 +1,22 @@
+# Windows 构建指南
+
+## xmake 构建（本机已验证）
+
+安装 Visual Studio 的 C++ 桌面开发工作负载及 xmake 后，在普通 PowerShell 7 中运行：
+
+```powershell
+cd C:\Code\aphros-test
+xmake f -p windows -a x64 -m release -y
+xmake build -j 8 t.simviewer
+xmake build -j 8 ap.mfer
+```
+
+`xmake.lua` 固定二维、local 后端、无 MPI/HDF/HYPRE/OpenCL，自动使用本机 MSVC；无需修改 PowerShell 启动配置。可执行文件在 `build\windows\x64\release`。已在 xmake v3.1.1、Visual Studio 2026 的 x64 MSVC 上构建并运行两个目标。
+
+下面保留原有 CMake/NMake 指南，供核对上游配置。
+
+---
+
 # Windows MSVC 编译指南
 
 ## 前置条件
