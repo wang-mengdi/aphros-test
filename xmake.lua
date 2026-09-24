@@ -112,3 +112,13 @@ target("ap.mfer")
     end
     add_files("src/aphros_c/git.cpp", "src/aphros_c/main.cpp",
               "src/aphros_c/parser.cpp", "src/main.c")
+
+target("t.advection")
+    set_kind("binary")
+    set_default(false)
+    set_runtimes("MD")
+    add_ldflags("/OPT:NOREF")
+    for _, source in ipairs(aphros_sources) do
+        add_files(source)
+    end
+    add_files("src/test/advection/main.cpp")
