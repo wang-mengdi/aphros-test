@@ -3,20 +3,28 @@ set_version("0.1.0")
 set_languages("c11", "cxx14")
 add_rules("mode.debug", "mode.release")
 
--- Match the local, two-dimensional MSVC configuration in BUILD.md.
+-- Keep 2D available; opt in to 3D for the standard PLIC benchmarks.
 -- Keep the existing CMake files as the upstream reference.
+option("aphros_3d")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Build the 3D local backend in addition to 2D")
+option_end()
+
 add_includedirs("src")
 add_defines(
     "_USE_MATH_DEFINES", "NOMINMAX",
-    "_USE_DIM1_=0", "_USE_DIM2_=1", "_USE_DIM3_=0", "_USE_DIM4_=0",
+    "_USE_DIM1_=0", "_USE_DIM2_=1", "_USE_DIM4_=0",
     "_USE_MPI_=0", "_USE_HDF_=0", "_USE_AVX_=0",
     "_USE_BACKEND_CUBISM_=0", "_USE_BACKEND_LOCAL_=1",
     "_USE_BACKEND_NATIVE_=0", "_USE_HYPRE_=0", "_USE_AMGX_=0",
     "_USE_OPENCL_=0"
 )
 
+add_defines("_USE_DIM3_=" .. (has_config("aphros_3d") and "1" or "0"))
+
 -- Equivalent to the object modules collected by src/CMakeLists.txt for the
--- local 2D backend. Sources for disabled optional backends are omitted.
+-- local backend in the enabled dimensions. Disabled optional backends are omitted.
 local aphros_sources = {
     "src/color/color.c",
     "src/distr/report.cpp",

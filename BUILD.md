@@ -12,7 +12,20 @@ xmake build -j 8 ap.mfer
 xmake build -j 8 t.advection
 ```
 
-`xmake.lua` 固定二维、local 后端、无 MPI/HDF/HYPRE/OpenCL，自动使用本机 MSVC；无需修改 PowerShell 启动配置。可执行文件在 `build\windows\x64\release`。已在 xmake v3.1.1、Visual Studio 2026 的 x64 MSVC 上构建并运行两个目标。
+`xmake.lua` 默认二维、local 后端、无 MPI/HDF/HYPRE/OpenCL，自动使用本机 MSVC；无需修改 PowerShell 启动配置。可执行文件在 `build\windows\x64\release`。已在 xmake v3.1.1、Visual Studio 2026 的 x64 MSVC 上构建并运行两个目标。
+
+## 三维 PLIC 基准（2026-09-24）
+
+通过正式开关在保留二维支持的同时启用三维：
+
+```powershell
+xmake f -m release --aphros_3d=y
+xmake build -j 8 t.advection
+```
+
+关闭三维用 `xmake f --aphros_3d=n`，然后重新构建需要的 target。开关改变已启用维度的模板实例化，会触发相关源文件重新编译。三维实验配置必须同时设 `spacedim 3`、`dim 3` 和非退化的 z 网格。二维实验仍显式设 `spacedim 2`。本次已验证开启开关后的三维 `t.advection`；`ap.mfer` 的三维物理算例尚未验收。
+
+SimLiquid 对比配置与量化记录位于 `C:\Code\SimLiquid\comparison\20260924_v11_plic3d`。注意本机 Aphros 历史修改已关闭 Youngs 后的高度法向修正；报告不能将其等同于未修改的上游默认配置。三维原始场以标准输出 `u_*.raw` 及其 XMF 元数据为准。历史调试输出 `raw_vof_*.raw` 是二维切片缓冲，不能用于三维体积分数比较。
 
 下面保留原有 CMake/NMake 指南，供核对上游配置。
 
