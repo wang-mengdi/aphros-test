@@ -18,6 +18,8 @@
 
 #include "dump/dumper.h"
 #include "dump/output.h"
+#include "dump/raw.h"
+#include "solver/approx.h"
 #include "func/init_u.h"
 #include "func/init_vel.h"
 #include "geom/mesh.h"
@@ -104,7 +106,7 @@ class Advection : public KernelMeshPar<M_, GPar<M_>> {
   Dumper dmf_; // fields
   Dumper dms_; // statistics
 
-  // boundary conditions for advection (empty)
+  // Optional closed-wall conditions; empty by default.
   MapEmbed<BCondAdvection<Scal>> bc_;
 };
 
@@ -117,11 +119,47 @@ Advection<M>::Advection(Vars& var_, const BlockInfoProxy& b, Par& p)
 
 template <class M>
 void Advection<M>::Init(Sem& sem) {
-  if (sem.Nested("init-field")) {
+  if (var.String["init_vf"] == "raw") {
+    // Headerless native Float64 cell averages, x contiguous, full mesh.
+    // The non-MPI Raw reader is used here only for one whole-domain block.
+    const auto path = var.String["init_vf_raw_path"];
+    if (sem("init-raw-check")) {
+      fassert_equal(m.GetInBlockCells().GetSize(), m.GetGlobalSize(),
+                    ". init_vf=raw in this driver requires one mesh block");
+      std::ifstream input(path, std::ios::binary | std::ios::ate);
+      fassert(input.good(), "Can't open initial field '" + path + "'");
+      fassert_equal(static_cast<std::streamoff>(input.tellg()),
+          static_cast<std::streamoff>(m.GetGlobalSize().prod()) * sizeof(double),
+          ". Initial Float64 field has wrong length");
+      fcu_.Reinit(m, 0.);
+    }
+    if (sem.Nested("init-raw-read")) {
+      const auto meta = dump::Xmf<Vect>::GetMeta(m);
+      dump::Raw<M>::Read(fcu_, meta, path, m);
+    }
+    if (sem("init-raw-comm")) {
+      for (auto c : m.Cells()) {
+        fassert(std::isfinite(fcu_[c]) && fcu_[c] >= 0 && fcu_[c] <= 1,
+                "Initial volume fractions must be finite and in [0,1]");
+      }
+      m.Comm(&fcu_);
+    }
+  } else if (sem.Nested("init-field")) {
     InitVf(fcu_, var, m, true);
   }
 
   if (sem("init-create")) {
+    if (var.Int("advection_walls", 0)) {
+      MapEmbed<BCond<Scal>> scalar_bc;
+      for (auto f : m.AllFaces()) {
+        size_t nci;
+        if (m.IsBoundary(f, nci)) {
+          bc_[f] = BCondAdvection<Scal>(nci);
+          scalar_bc[f] = BCond<Scal>(BCondType::reflect, nci);
+        }
+      }
+      BcApply(fcu_, scalar_bc, m);
+    }
     // flux
     ff_flux_.Reinit(m, 0);
     int edim = var.Int["dim"];
@@ -131,6 +169,10 @@ void Advection<M>::Init(Sem& sem) {
         x[2] = 0.;
       }
       ff_flux_[f] = par_.fv(x, 0.).dot(m.GetSurface(f));
+      size_t nci;
+      if (var.Int("advection_walls", 0) && m.IsBoundary(f, nci)) {
+        ff_flux_[f] = 0.;
+      }
     }
 
     // source
@@ -220,6 +262,10 @@ void Advection<M>::Run() {
     for (auto f : m.AllFaces()) {
       Vect x = m.GetCenter(f);
       ff_flux_[f] = par_.fv(x, t).dot(m.GetSurface(f));
+      size_t nci;
+      if (var.Int("advection_walls", 0) && m.IsBoundary(f, nci)) {
+        ff_flux_[f] = 0.;
+      }
     }
 
     maxvel_ = 0.;

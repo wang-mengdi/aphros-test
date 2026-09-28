@@ -37,6 +37,23 @@ std::function<Vect(Vect, Scal)> CreateInitVel(const Vars& par) {
       }
       return res;
     };
+  } else if (v == "deformation3d") {
+    fassert(Vect::dim == 3 && par.Int["dim"] == 3,
+            "deformation3d requires a three-dimensional mesh");
+    const Scal revt = par.Double["revt"];
+    // Solenoidal three-component deformation on the unit cube.
+    // Strict reversal gives equal forward/backward intervals when revt/dt
+    // is integral; existing velocity modes retain their original behavior.
+    f = [revt](Vect x, Scal t) -> Vect {
+      Vect res(0);
+      for (size_t d = 0; d < 3; ++d) {
+        res[d] = (d == 0 ? 2. : -1.) *
+            std::pow(std::sin(M_PI * x[d]), 2) *
+            std::sin(2 * M_PI * x[(d + 1) % 3]) *
+            std::sin(2 * M_PI * x[(d + 2) % 3]);
+      }
+      return t >= revt ? res * (-1.) : res;
+    };
   } else if (v == "stretch") {
     Scal mg = par.Double["stretch_magn"];
     Vect o(par.Vect["stretch_origin"]);
